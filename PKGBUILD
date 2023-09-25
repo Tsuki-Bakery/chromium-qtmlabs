@@ -1,18 +1,21 @@
-# Maintainer: Evangelos Foutras <evangelos@foutrelis.com>
+# Maintainer: Nhan Dang <nhandt64@disroot.org>
+# Contributor: Evangelos Foutras <evangelos@foutrelis.com>
 # Contributor: Pierre Schmitz <pierre@archlinux.de>
 # Contributor: Jan "heftig" Steffens <jan.steffens@gmail.com>
 # Contributor: Daniel J Griffiths <ghost1227@archlinux.us>
 
-pkgname=chromium
-pkgver=116.0.5845.110
+pkgname=chromium-qtmlabs
+pkgver=117.0.5938.119
 pkgrel=1
 _launcher_ver=8
 _gcc_patchset=116-patchset-2
 _manual_clone=0
-pkgdesc="A web browser built for speed, simplicity, and security"
+pkgdesc="A patched Chromium aiming to provide VA-API working out of the box"
 arch=('x86_64')
 url="https://www.chromium.org/Home"
 license=('BSD')
+provides=('chromium')
+conflicts=('chromium')
 depends=('gtk3' 'nss' 'alsa-lib' 'xdg-utils' 'libxss' 'libcups' 'libgcrypt'
          'ttf-liberation' 'systemd' 'dbus' 'libpulse' 'pciutils' 'libva'
          'libffi' 'desktop-file-utils' 'hicolor-icon-theme')
@@ -24,17 +27,23 @@ optdepends=('pipewire: WebRTC desktop sharing under Wayland'
             'org.freedesktop.secrets: password storage backend on GNOME / Xfce'
             'kwallet: support for storing passwords in KWallet on Plasma')
 options=('!lto') # Chromium adds its own flags for ThinLTO
-source=(https://commondatastorage.googleapis.com/chromium-browser-official/chromium-$pkgver.tar.xz
+source=(https://github.com/qtmlabs/chromium/archive/refs/heads/qtmlabs-117.tar.gz
         https://github.com/foutrelis/chromium-launcher/archive/v$_launcher_ver/chromium-launcher-$_launcher_ver.tar.gz
         https://github.com/stha09/chromium-patches/releases/download/chromium-$_gcc_patchset/chromium-$_gcc_patchset.tar.xz
+        add-memory-for-std-unique_ptr-in-third_party-ip.patch
+        roll-src-third_party-libavif-src-b33d9ebfc.676aded35.patch
+        free-the-X11-pixmap-in-the-NativePixmapEGLX11Bind.patch
         REVERT-disable-autoupgrading-debug-info.patch
-        random-build-fixes.patch
+        material-color-utilities-cmath.patch
         use-oauth2-client-switches-as-default.patch)
-sha256sums=('e85ef479a1a4972ffd4d2e389cbaf341df4c7cca63e4ebbb38d175fda106d9a9'
+sha256sums=('fe8edb876bf1e3b209306cebe20dcffef367f14d0fef542b393e744ddf4de0e8'
             '213e50f48b67feb4441078d50b0fd431df34323be15be97c55302d3fdac4483a'
             '25ad7c1a5e0b7332f80ed15ccf07d7e871d8ffb4af64df7c8fef325a527859b0'
+            '7b9708f0dbfd697be7043d3cfe52da991185aa0ee29a3b8263506cd3ae4d41a9'
+            '30841fbe0785f8df584eeaa86584fe75f89da26e71df80cf536887557ddef0b6'
+            'ab1eb107ec1c915065dc59cf4832da27e17d60eb29038e2aec633daeb946cc6a'
             '1b782b0f6d4f645e4e0daa8a4852d63f0c972aa0473319216ff04613a0592a69'
-            'e938c6ee7087eed8f0de83ffb0ca89e328575808fafa4fe3950aeb1bc58b9411'
+            '55e6097d347be40cffebf3ce13ba84ea92d940f60865f1bd7c9af1ef2a2ef8e1'
             'e393174d7695d0bafed69e868c5fbfecf07aa6969f3b64596d0bae8b067e1711')
 
 if (( _manual_clone )); then
@@ -54,8 +63,8 @@ declare -gA _system_libs=(
   [harfbuzz-ng]=harfbuzz
   [icu]=icu
   [jsoncpp]=jsoncpp
-  #[libaom]=aom      # https://aomedia.googlesource.com/aom/+/706ee36dcc82
-  #[libavif]=libavif # https://github.com/AOMediaCodec/libavif/commit/4d2776a3
+  #[libaom]=aom
+  [libavif]=libavif
   [libdrm]=
   [libjpeg]=libjpeg
   [libpng]=libpng
@@ -105,19 +114,20 @@ prepare() {
   patch -Np1 -i ../use-oauth2-client-switches-as-default.patch
 
   # Upstream fixes
+  patch -Np1 -i ../add-memory-for-std-unique_ptr-in-third_party-ip.patch
+  patch -Np1 -i ../roll-src-third_party-libavif-src-b33d9ebfc.676aded35.patch
+  patch -Np1 -i ../free-the-X11-pixmap-in-the-NativePixmapEGLX11Bind.patch
 
   # Revert addition of compiler flag that needs newer clang
   patch -Rp1 -i ../REVERT-disable-autoupgrading-debug-info.patch
 
   # Build fixes
-  patch -Np1 -i ../random-build-fixes.patch
+  patch -Np0 -i ../material-color-utilities-cmath.patch
 
   # Fixes for building with libstdc++ instead of libc++
   patch -Np1 -i ../patches/chromium-114-maldoca-include.patch
   patch -Np1 -i ../patches/chromium-114-ruy-include.patch
   patch -Np1 -i ../patches/chromium-114-vk_mem_alloc-include.patch
-  patch -Np1 -i ../patches/chromium-116-object_paint_properties_sparse-include.patch
-  patch -Np1 -i ../patches/chromium-116-profile_view_utils-include.patch
 
   # Link to system tools required by the build
   mkdir -p third_party/node/linux/node-linux-x64/bin
@@ -183,9 +193,7 @@ build() {
   # Facilitate deterministic builds (taken from build/config/compiler/BUILD.gn)
   CFLAGS+='   -Wno-builtin-macro-redefined'
   CXXFLAGS+=' -Wno-builtin-macro-redefined'
-  CPPFLAGS+=' -D__DATE__=  -D__TIME__=  -D__TIMESTAMP__='
-
-  # Do not warn about unknown warning options
+  CPPFLAGS+=' -D__DATE__=  -D__TIME__=  -D__TIMESTAMP__='fe8edb876bf1e3b209306cebe20dcffef367f14d0fef542b393e744ddf4de0e8
   CFLAGS+='   -Wno-unknown-warning-option'
   CXXFLAGS+=' -Wno-unknown-warning-option'
 
@@ -197,9 +205,7 @@ build() {
   CFLAGS=${CFLAGS/-fexceptions}
   CFLAGS=${CFLAGS/-fcf-protection}
   CXXFLAGS=${CXXFLAGS/-fexceptions}
-  CXXFLAGS=${CXXFLAGS/-fcf-protection}
-
-  # This appears to cause random segfaults when combined with ThinLTO
+  CXXFLAGS=${CXXFLAGS/-fcf-protection}fe8edb876bf1e3b209306cebe20dcffef367f14d0fef542b393e744ddf4de0e8 with ThinLTO
   # https://bugs.archlinux.org/task/73518
   CFLAGS=${CFLAGS/-fstack-clash-protection}
   CXXFLAGS=${CXXFLAGS/-fstack-clash-protection}
